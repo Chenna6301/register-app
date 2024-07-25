@@ -4,6 +4,14 @@ pipeline {
         jdk 'JDK'
         maven 'Maven3'
     }
+    environment {
+        APP_NAME = "register-app-pipeline"
+        RELEASE = "1.0.0"
+        DOCKER_USER = "chennareddy2912@gmail.com"
+        DOCKER_PASS = credentials('Docker-hub')  
+        IMAGE_NAME = "${DOCKER_USER}/${APP_NAME}"
+        IMAGE_TAG = "${RELEASE}-${BUILD_NUMBER}"
+    }
     stages {
         stage("Cleanup Workspace") {
             steps {
@@ -43,6 +51,18 @@ pipeline {
             steps {
                 script {
                     waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+        
+        stage("Build & Push Docker Image") {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', 'docker-hub') {  // Use Docker Hub registry and Jenkins credentials
+                        def docker_image = docker.build("${IMAGE_NAME}")
+                        docker_image.push("${IMAGE_TAG}")
+                        docker_image.push('latest')
+                    }
                 }
             }
         }
