@@ -7,8 +7,8 @@ pipeline {
     environment {
         APP_NAME = "register-app-pipeline"
         RELEASE = "1.0.0"
-        DOCKER_USER = "chennareddy12"  // Use your Docker Hub username, not email
-        DOCKER_PASS = credentials('Docker-hub')  // Reference Jenkins credential ID
+        DOCKER_USER = "chennareddy12"
+        DOCKER_PASS = credentials('Docker-hub')
         IMAGE_NAME = "${DOCKER_USER}/${APP_NAME}"
         IMAGE_TAG = "${RELEASE}-${BUILD_NUMBER}"
     }
@@ -40,7 +40,7 @@ pipeline {
         stage("SonarQube Analysis") {
             steps {
                 script {
-                    withSonarQubeEnv('sonarqube') { 
+                    withSonarQubeEnv('sonarqube') {
                         sh "mvn sonar:sonar"
                     }
                 }
@@ -58,11 +58,28 @@ pipeline {
         stage("Build & Push Docker Image") {
             steps {
                 script {
-                    docker.withRegistry('https://index.docker.io/v1/', 'Docker-hub') {  // Use Docker Hub registry and Jenkins credentials
+                    docker.withRegistry('https://index.docker.io/v1/', 'Docker-hub') {
                         def docker_image = docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
                         docker_image.push()
                         docker_image.push('latest')
                     }
+                }
+            }
+        }
+        
+        stage("Trivy Scan") {
+            steps {
+                script {
+                    sh 'docker run -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ${IMAGE_NAME}:latest --no-progress --scanners vuln --exit-code 0 --severity HIGH,CRITICAL --format table'
+                }
+            }
+        }
+
+        stage("Cleanup Artifacts") {
+            steps {
+                script {
+                    sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG}"
+                    sh "docker rmi ${IMAGE_NAME}:latest"
                 }
             }
         }
