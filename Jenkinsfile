@@ -11,6 +11,7 @@ pipeline {
         DOCKER_PASS = credentials('Docker-hub')
         IMAGE_NAME = "${DOCKER_USER}/${APP_NAME}"
         IMAGE_TAG = "${RELEASE}-${BUILD_NUMBER}"
+        JENKINS_API_TOKEN = credentials('JENKINS_API_TOKEN') 
     }
     stages {
         stage("Cleanup Workspace") {
@@ -66,11 +67,33 @@ pipeline {
                 }
             }
         }
+
+        stage("Check Disk Space") {
+            steps {
+                script {
+                    sh "df -h"
+                }
+            }
+        }
+
+        stage("Clean Up Docker Resources") {
+            steps {
+                script {
+                    sh """
+                    docker system prune -a --volumes -f
+                    df -h
+                    """
+                }
+            }
+        }
         
         stage("Trivy Scan") {
             steps {
                 script {
-                    sh "docker run -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ${IMAGE_NAME}:latest --no-progress --scanners vuln --exit-code 0 --severity HIGH,CRITICAL --format table"
+                    sh """
+                    df -h
+                    docker run -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ${IMAGE_NAME}:latest --no-progress --scanners vuln --exit-code 0 --severity HIGH,CRITICAL --format table
+                    """
                 }
             }
         }
@@ -83,20 +106,27 @@ pipeline {
                 }
             }
         }
-        
+
+        stage("Push the Changed Deployment File to Git") {
+            steps {
+                script {
+                    sh """
+                    git config --global user.name "Chenna6301"
+                    git config --global user.email "chenna.reddy@cloudzenix.com"
+                    git add deployment.yaml
+                    git commit -m "Updated Deployment manifest"
+                    git push origin main
+                    """
+                }
+            }
+        }
+
         stage("Trigger CD Pipeline") {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'JENKINS_API_TOKEN', variable: 'JENKINS_API_TOKEN')]) {
-                        sh """
-                            curl -v -k --user admin:${JENKINS_API_TOKEN} \
-                            -X POST \
-                            -H 'cache-control: no-cache' \
-                            -H 'content-type: application/x-www-form-urlencoded' \
-                            --data 'IMAGE_TAG=${IMAGE_TAG}' \
-                            'http://ec2-54-166-86-252.compute-1.amazonaws.com:8080/job/register-app-cd/buildWithParameters?token=github-token1'
-                        """
-                    }
+                    sh """
+                    curl -v -k --user admin:${JENKINS_API_TOKEN} -X POST -H 'cache-control: no-cache' -H 'content-type: application/x-www-form-urlencoded' --data 'IMAGE_TAG=${IMAGE_TAG}' 'http://ec2-54-166-86-252.compute-1.amazonaws.com:8080/job/register-app-cd/buildWithParameters?token=github-token1'
+                    """
                 }
             }
         }
